@@ -30,18 +30,27 @@ report() { printf "  %s %s\n" "$1" "$2"; }
 PATTERNS=()
 if [ -f "$CRED" ]; then
   while IFS= read -r line; do
-    v=$(printf '%s' "$line" | sed -n 's#https://[^:]*:\([^@]*\)@.*#\1#p')
-    [ -n "$v" ] && [ ${#v} -ge 8 ] && PATTERNS+=("$v")
+    # 取 https:// 与 @ 之间的整段，再按 : 拆成 用户名 / 密码 —— 两段都可能是令牌
+    cred=$(printf '%s' "$line" | sed -n 's#^https://\([^@]*\)@.*#\1#p')
+    for seg in $(printf '%s' "$cred" | tr ':' '\n'); do
+      [ -n "$seg" ] && [ ${#seg} -ge 16 ] && PATTERNS+=("$seg")
+    done
   done < "$CRED"
 fi
+# 去重
+if [ ${#PATTERNS[@]} -gt 0 ]; then
+  PATTERNS=($(printf '%s\n' "${PATTERNS[@]}" | sort -u))
+fi
 # 通用形态
-REGEX='https://[^/[:space:]"]*:[^@[:space:]"]{8,}@(gitee|github)\.com'
+# 排除已脱敏占位符：***REDACTED*** / <新令牌> / ghp_... 等不应再报
+REGEX='https://[^/[:space:]\"]*:[^@[:space:]\"]{8,}@(gitee|github)\\.com'
+EXCLUDE='(REDACTED|<新令牌>|ghp_\.\.\.|\*\*\*)'
 REGEX2='(gh[pousr]_[A-Za-z0-9]{30,})'
 REGEX3='(Authorization:[[:space:]]*(token|Bearer)[[:space:]]+)[A-Za-z0-9_\-]{20,}'
-REGEX4='(ima_kb_[A-Za-z0-9]{6,})'
+# 注：曾检测 ima_kb_ 前缀，实测那是**知识库 ID**（非凭据），产生误报，已移除（2026-10-27）
 
 echo "== A9 凭据闸门 =="
-echo "   已知凭据值: ${#PATTERNS[@]} 个；通用模式: 4 类"
+echo "   已知凭据值: ${#PATTERNS[@]} 个；通用形态: 3 类"
 echo
 
 for t in "${TARGETS[@]}"; do
@@ -61,8 +70,9 @@ for t in "${TARGETS[@]}"; do
       fi
     done
     # 通用形态
-    for re in "$REGEX" "$REGEX2" "$REGEX3" "$REGEX4"; do
-      if grep -qE -- "$re" "$f" 2>/dev/null; then
+    for re in "$REGEX" "$REGEX2" "$REGEX3"; do
+      # 命中行若全是占位符则跳过
+      if grep -E -- "$re" "$f" 2>/dev/null | grep -qvE "$EXCLUDE"; then
         report "$RED✗$RST" "形态匹配($re): ${f}"
         f_hits=$((f_hits+1)); hits=$((hits+1))
       fi
