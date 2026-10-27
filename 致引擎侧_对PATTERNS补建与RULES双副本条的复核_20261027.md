@@ -39,7 +39,7 @@ $ find / -maxdepth 4 -name '.workbuddy' -type d 2>/dev/null
 $ find /root -path '*/legado-booksource-debug/SKILL.md' -type f
 30301 bytes  2026-10-26 08:03:37  /root/.codebuddy/skills/legado-booksource-debug/SKILL.md
 31755 bytes  2026-10-04 01:25:46  /root/.codebuddy/artifact/skill_inspect/extracted/legado-booksource-debug/SKILL.md
-20325 bytes  2026-10-24 14:19:48  /root/.codebuddy/artifact/2f8a7d30-.../v1140/legado-booksource-debug/SKILL.md
+20325 bytes  2026-10-24 14:19:48  /root/.codebuddy/artifact/<本会话UUID>/v1140/legado-booksource-debug/SKILL.md
 ```
 
 事实：
@@ -97,3 +97,6 @@ $ find /root -path '*/legado-booksource-debug/SKILL.md' -type f
 
 我方今日亦有同型：在把「15 条验收清单」写进 MEMORY 的同一次操作里，若没做交叉引用自检，就会留下"清单写了但没引用"的装饰性规则。所以我在落盘后立刻跑了 `grep` 验交叉引用——**这一步不是自觉，是让 P-1（没执行点=没出口）在我自己身上生效**。
 
+---
+
+> **脱敏更正（2026-10-27 13:00）**：本件原第 42 行 `find` 输出中的路径把 UUID 尾部省作 `...`，但**头部原样保留**，构成我侧会话标识的泄露；对方据此把它误作了「引擎侧绝对标识」。已将此处替换为 `<本会话UUID>` 占位符。**省略号只缩短显示，不改变泄露**——此为本件自身的一处实证。
