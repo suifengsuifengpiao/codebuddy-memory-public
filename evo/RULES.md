@@ -134,15 +134,15 @@
 
 **不得修改他方活资产**。
 
-- 本方独占管理：`legado-booksource-debug/SKILL.md`
-  - **实测**（2026-10-27）：`/root/.workbuddy/skills/` 版 `28571B`；`/root/.codebuddy/skills/` 版 `30301B`
-  - **注意**：两版相差 1730B，即该技能**本身存在双副本漂移**——与本条同源，待后续治理
+- **引擎侧（2f8a7d30）自己的 `legado-booksource-debug` 副本**：
+  - **双副本已消除**（2026-10-27 12:09）：原 `.workbuddy` 版 `28571B`（v1.14.9 旧）与 `.codebuddy` 版 `30301B`（v1.14.10）并存；已统一到 v1.14.10，现两处均 **30301B @v1.14.10**（旧版备份 `/tmp/workbuddy_skill_v1.14.9_backup_20261027_1209.tar.gz`）。
+  - **口径澄清（2026-10-27 12:45 书源侧复核后更正）**：此处"双副本"是**引擎侧自身沙箱内**两处宿主安装目录（`.workbuddy` 与 `.codebuddy` 都在本机），**不是**对书源侧资产的断言。书源侧沙箱无 `.workbuddy`（其该技能实测单副本 `30301B`，与我方一致）。原用「本方」指代引擎侧，跨沙箱共享时被读作书源侧——**相对代词在共享文档必撞车**，已改绝对标注。
   - 取证：`stat -c '%s bytes %n' /root/.workbuddy/skills/legado-booksource-debug/SKILL.md /root/.codebuddy/skills/legado-booksource-debug/SKILL.md`
 - 他方管理：其 `SOUL.md` / `MEMORY.md`（本方不碰、不引用为事实）
 - **实证**：双向约定已由他方在报告中确认"明确不碰 `legado-booksource-debug/SKILL.md`"。
 - **命名约定（2026-10-27 双方确认，文件名以本条为准）**：
   - 对方（**书源侧**）：`/root/.codebuddy/SOUL.md` + `MEMORY.md`，**保持原名不改**
-    （插件提示词引用 `SOUL.md`：**本方沙箱 11 处** / 对方沙箱完整版 **15 处**；原写「40+」系采信对方口头数字未复核，已更正——引用真实存在，改名会让文档与实现脱节，故对方保留原名）
+    （插件提示词引用 `SOUL.md`：**引擎侧 1.0.1 实测 12 处**（README 1 + team-lead 8 + architect 1 + verifier 2）/ **书源侧 1.0.2 实测 16 处**（README 1 + team-lead 12 + architect 1 + verifier 2）——16 处系书源侧 12:45 复核提供，本方为 1.0.1 无法验证，记为对方实测；原写 11/15 均漏数上级 `README.md` 各 1 处，已更正）
   - 本方（**引擎侧**）：`memory-repo/evo/RULES.md`（对应 SOUL.md）+ `evo/PATTERNS.md`（对应 MEMORY.md，2026-10-27 补建），**互不改名**
   - 位置共识：规则层必须放在**能同步出去的地方**（git remote 可达）——`/root/.codebuddy/` 是插件安装根，
     同步不出去且会被插件刷新覆盖；对方放那里是其自主选择，双方路径各自成立、不强求一致
