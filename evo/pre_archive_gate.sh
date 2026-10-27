@@ -23,6 +23,19 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
   TARGETS=("/workspace/memory-repo" "/workspace")
 fi
 
+# 会话标识清单：本机 hostname + artifact 目录的 8 位十六进制前缀（仅用于公开层检测）
+# 背景（2026-10-27）：公开回执曾泄露 8 位会话 UUID 前缀，对方误认归属——"省略号不等于脱敏"。
+SIDS=()
+HN=$(hostname 2>/dev/null || true); [ -n "${HN:-}" ] && SIDS+=("$HN")
+for u in /root/.codebuddy/artifact/*/; do
+  [ -e "$u" ] || continue
+  b=$(basename "$u")
+  case "$b" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) SIDS+=("${b:0:8}") ;;
+  esac
+done
+if [ ${#SIDS[@]} -gt 0 ]; then SIDS=($(printf '%s\n' "${SIDS[@]}" | sort -u)); fi
+
 hits=0
 report() { printf "  %s %s\n" "$1" "$2"; }
 
@@ -77,6 +90,18 @@ for t in "${TARGETS[@]}"; do
         f_hits=$((f_hits+1)); hits=$((hits+1))
       fi
     done
+    # 第 4 类：公开层会话标识泄露（hostname / 会话 UUID 前缀）— 2026-10-27 加
+    # 仅对 memory-public 生效；私库存档文件名含会话短 ID 属正常，不误伤
+    case "$f" in
+      */memory-public/*)
+        for sid in ${SIDS[@]+"${SIDS[@]}"}; do
+          [ ${#sid} -ge 6 ] || continue
+          if grep -qF -- "$sid" "$f" 2>/dev/null; then
+            report "$RED✗$RST" "会话标识($sid): ${f}"
+            f_hits=$((f_hits+1)); hits=$((hits+1)); break
+          fi
+        done ;;
+    esac
   done < <(find "$t" -type f -size -60M 2>/dev/null | head -4000)
 
   if [ $f_hits -eq 0 ]; then report "$GRN✓$RST" "干净: $t"; else report "$RED✗$RST" "$t 命中 $f_hits 项"; fi

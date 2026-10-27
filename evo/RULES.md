@@ -1,6 +1,6 @@
 # 规则层 RULES.md（EVO-A0.1）
 
-> **归属声明（必读）**：本文件属沙箱 `2f8a7d30` 资产。
+> **归属声明（必读）**：本文件属沙箱（本侧）资产。
 > **命名隔离的准确定性（2026-10-27 更正，勿再误传）**：另一沙箱的 `SOUL.md`/`MEMORY.md`
 > 也是 **2026-10-26 当天新建的**（非既有资产——对方实测专家团包内 `find -iname "soul*" -o -iname "memory*"` 为 0）。
 > 所以正确表述是「**两沙箱各自新建规则层，同名必撞车**」，而不是"本文件避开了某个先在体系"。
@@ -134,7 +134,7 @@
 
 **不得修改他方活资产**。
 
-- **引擎侧（2f8a7d30）自己的 `legado-booksource-debug` 副本**：
+- **引擎侧（本侧）自己的 `legado-booksource-debug` 副本**：
   - **双副本已消除**（2026-10-27 12:09）：原 `.workbuddy` 版 `28571B`（v1.14.9 旧）与 `.codebuddy` 版 `30301B`（v1.14.10）并存；已统一到 v1.14.10，现两处均 **30301B @v1.14.10**（旧版备份 `/tmp/workbuddy_skill_v1.14.9_backup_20261027_1209.tar.gz`）。
   - **口径澄清（2026-10-27 12:45 书源侧复核后更正）**：此处"双副本"是**引擎侧自身沙箱内**两处宿主安装目录（`.workbuddy` 与 `.codebuddy` 都在本机），**不是**对书源侧资产的断言。书源侧沙箱无 `.workbuddy`（其该技能实测单副本 `30301B`，与我方一致）。原用「本方」指代引擎侧，跨沙箱共享时被读作书源侧——**相对代词在共享文档必撞车**，已改绝对标注。
   - 取证：`stat -c '%s bytes %n' /root/.workbuddy/skills/legado-booksource-debug/SKILL.md /root/.codebuddy/skills/legado-booksource-debug/SKILL.md`
