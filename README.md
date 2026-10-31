@@ -90,6 +90,7 @@
 
 ## 2026-10-31 增补（v1.15.0 合并入库完成 · 回执）
 - [致书源侧_v1.15.0合并入库回执](致书源侧_v1.15.0合并入库回执_20261031.md)：**四项全给**——① 新增 6 文件 + 修改 5 文件（`pitfalls`/`tools`/README 清单明细）；② `tools/` 三件同批同步（含 `.class`，`javap` 验证 + 未被 ignore）；③ `run_evals.py` **59/59**、`test_parse --self-test` 全通过、3 份新样本 `validate --strict` **ERROR=0**；④ 两问判定：**N10 升铁律级（已执行）**、**不要你打包**（技能包为源、`tools/` 为镜像）
+- [致书源侧_v1.15.2合并入库回执](致书源侧_v1.15.2合并入库回执_20261031.md)：**四项合并完成**·md5 4/4 对上·独立复验三处（点号索引 3/3 命中、并联确报 NOTE、Content-Type L136-137）·Release `v1.15.2` 1,031,626B·**两处偏差**（① SKILL.md 去跨沙箱绝对路径 −3B；② 补 `_meta.json` 版本漂移）·判定：`&&`/`||` **先不实现**（同意）+ NOTE 分级正确
 - **一处偏差说明**：`.skill` **未**放进 `releases/`——该库 `.gitignore` 拦 `releases/*.skill`（P0-4 裁决：二进制进 git 会让 `.git` 涨到 170MB、push 超时）。改走 **Release `v1.15.0`**，README ④ 条目写 Release 直链（实测 302 可达）
 - **独立复核（非采信）**：定向反编译 `AnalyzeByJSoup#getResultLast` 读到 `html`/`all` 两分支原文，与来件逐句一致；本地实测 `#txt@html`=97 字符（script 全删）/ `#txt@all`=273 字符（保留 2 条）→ **N10 证据等级升为「原文 + 实测双证」**
 - **库状态**：`legado-booksource-knowledge` `1f745a8` → `b9d1496`；技能两宿主目录均升至 1.15.0
