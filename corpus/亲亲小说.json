@@ -1,0 +1,48 @@
+[
+  {
+    "bookSourceName": "亲亲小说",
+    "bookSourceUrl": "https://qinqinxs.cc",
+    "bookSourceGroup": "小说",
+    "bookSourceType": 0,
+    "bookSourceComment": "qinqinxs.cc 亲亲小说。①站点特性：纯静态HTML、UTF-8，但有一道【JS安全质询】：无cookie访问时返回'安全加载'假页面（JS检测webdriver/平台/触摸点，排除模拟器与PC，通过后写死cookie keynamezzc并刷新放行）——OkHttp无JS环境永远过不去，故本版在header中预置该固定cookie绕过；②搜索URL：/index.php?a=search&keyword=关键词，无分页参数；③书籍页/book/ID.html，目录全量内嵌在详情页#chapter-list；④正文页/html/书ID/章ID.html，正文容器div.novel-start-text；⑤【重要】正文另有图片验证码：免费预览开头几段后出现/captcha.php，首次阅读需在Legado内过验证码，过第一次后观察后续章节是否仍要验证（每章都要则需升级书源JS用java.getVerificationCode自动过码）；⑥分类浏览/list/1-8.html（1玄幻2武侠3都市4历史5推理6科幻7同人8其他），ruleExplore基于首页列表结构推导待实测；⑦如某天全部页面突然解析为空，大概率是站长更换了质询cookie值——用无痕模式打开网站，查看质询页源码中keynamezzc=到;path之间的完整值，替换header中的Cookie即可；⑧封面/files/article/image/{x}/{ID}/{ID}s.jpg；⑩搜索走隐藏WebView+webJs注入：服务端除cookie值外还校验TLS指纹/HTTP2特征，OkHttp即使静态带cookie也会被挡，必须用系统WebView(ArkWeb内核)请求；webJs语义=「JS返回值直接作为HTML」(派发touchstart只会返回true导致解析全空)：故webJs内同步写cookie+同步XHR同源重抓真实页+document.write替换+返回outerHTML；webWait=8秒仅为等页面加载；⑪enabledCookieJar保持true：WebView过盾后cookie入jar，详情/目录/正文的普通请求自动携带；⑫若搜索通但点进详情/目录/正文仍是质询页，说明服务端死盯TLS指纹，jar内cookie对OkHttp无效，需将各页URL也改为WebView方式获取(届时调整规则)。",
+    "header": "{\"User-Agent\": \"Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36\", \"Referer\": \"https://qinqinxs.cc/\", \"Cookie\": \"keynamezzc=bdc2d347f991bb43d11a81ceb228d39\"}",
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": true,
+    "concurrentRate": "3/60000",
+    "searchUrl": "https://qinqinxs.cc/index.php?a=search&keyword={{key}},{\"charset\": \"utf-8\", \"webView\": true, \"webWait\": 8000, \"webJs\": \"document.cookie='keynamezzc=bdc2d347f991bb43d11a81ceb228d39;path=/;max-age=86400';var x=new XMLHttpRequest();x.open('GET',location.href,false);x.send();if(x.status==200){document.open();document.write(x.responseText);document.close();}document.documentElement.outerHTML\"}",
+    "ruleSearch": {
+      "bookList": "@CSS:div.row.g-4 > div",
+      "name": "@CSS:h5 a@text",
+      "author": "@CSS:p.text-muted.small@text##^作者：##",
+      "intro": "@CSS:p.text-secondary.small@text",
+      "bookUrl": "@CSS:h5 a@href##^/##https://qinqinxs.cc/",
+      "coverUrl": "@CSS:img@src##^/##https://qinqinxs.cc/"
+    },
+    "ruleBookInfo": {
+      "name": "@CSS:h1@text",
+      "author": "@CSS:div.text-secondary.small span:nth-child(1)@text##^作者：##",
+      "kind": "@CSS:span.text-primary@text##^分类：##",
+      "status": "@CSS:span.text-warning@text",
+      "intro": "@CSS:div.intro-content@ownText",
+      "coverUrl": "@CSS:div.col-4 img@src##^/##https://qinqinxs.cc/"
+    },
+    "ruleToc": {
+      "chapterList": "@CSS:#chapter-list a.chap-link",
+      "chapterName": "@text",
+      "chapterUrl": "@href##^/##https://qinqinxs.cc/"
+    },
+    "ruleContent": {
+      "content": "@CSS:div.novel-start-text@ownText"
+    },
+    "ruleExplore": {
+      "bookList": "@CSS:ul.list-group li.list-group-item",
+      "name": "@CSS:a[href^=\"/book/\"]@text",
+      "author": "@CSS:span.d-md-inline@text",
+      "kind": "@CSS:span.text-muted.small@text##\\[|\\]##",
+      "lastChapter": "@CSS:small@text",
+      "bookUrl": "@CSS:a[href^=\"/book/\"]@href##^/##https://qinqinxs.cc/"
+    },
+    "exploreUrl": "@js:var rows=[];\nfunction push(t,u,b){rows.push({title:t,url:u,style:{layout_flexBasisPercent:b}});}\npush('📖 分类浏览',null,1);\npush('玄幻奇幻','https://qinqinxs.cc/list/1.html',0.25);\npush('武侠仙侠','https://qinqinxs.cc/list/2.html',0.25);\npush('都市言情','https://qinqinxs.cc/list/3.html',0.25);\npush('历史军事','https://qinqinxs.cc/list/4.html',0.25);\npush('推理灵异','https://qinqinxs.cc/list/5.html',0.25);\npush('科幻网游','https://qinqinxs.cc/list/6.html',0.25);\npush('同人小说','https://qinqinxs.cc/list/7.html',0.25);\npush('其他类型','https://qinqinxs.cc/list/8.html',0.25);\npush('🏆 排行榜',null,1);\npush('总排行榜','https://qinqinxs.cc/rank/allvisit.html',0.25);\nJSON.stringify(rows);"
+  }
+]

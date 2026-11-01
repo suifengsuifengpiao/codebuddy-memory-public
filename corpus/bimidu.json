@@ -1,0 +1,45 @@
+{
+  "bookSourceComment": "",
+  "bookSourceGroup": "小说",
+  "bookSourceName": "笔迷读",
+  "bookSourceType": 0,
+  "bookSourceUrl": "https://www.bimidu.com/",
+  "customOrder": 5,
+  "enabled": true,
+  "enabledCookieJar": true,
+  "enabledExplore": true,
+  "exploreUrl": "[\n{\"title\":\"🔖分类🔖\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},\n{\"title\":\"玄幻魔法\",\"url\":\"/fenlei/1_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"武侠修真\",\"url\":\"/fenlei/2_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"都市言情\",\"url\":\"/fenlei/3_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"历史军事\",\"url\":\"/fenlei/4_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"网游竞技\",\"url\":\"/fenlei/5_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"科幻未来\",\"url\":\"/fenlei/6_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"恐怖灵异\",\"url\":\"/fenlei/7_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"其他类型\",\"url\":\"/fenlei/8_{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"——\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},\n\n{\"title\":\"🔖榜单🔖\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":1}},\n{\"title\":\"总排行\",\"url\":\"/t/allvisit/{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"最近更新\",\"url\":\"/t/lastupdate/{{page}}.html\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}},{\"title\":\"——\",\"url\":\"\",\"style\":{\"layout_flexGrow\":1,\"layout_flexBasisPercent\":0.25}}\n]",
+  "lastUpdateTime": 1791393980807,
+  "respondTime": 1653,
+  "ruleBookInfo": {
+    "author": "[property=\"og:novel:author\"]@content",
+    "coverUrl": "[property=\"og:image\"]@content",
+    "intro": "🔔 更新时间：{{@@[property=\"og:novel:update_time\"]@content##\\s##🔸}}\n\n📂 内容简介：{{@@[property=\"og:description\"]@content}}##(^|[。！？]+[”」）】]?)##$1<br>",
+    "kind": "[property~=category|status|update_time]@content##\\s.*",
+    "lastChapter": "[property=\"og:novel:latest_chapter_name\"]@content",
+    "name": "[property=\"og:novel:book_name\"]@content"
+  },
+  "ruleContent": {
+    "content": "#nr@html",
+    "nextContentUrl": "#next_url@href",
+    "replaceRegex": "##.*免费最快更新.*"
+  },
+  "ruleExplore": {},
+  "ruleSearch": {
+    "author": "tag.a.3@text",
+    "bookList": ".xb9 .newlist .text-more",
+    "bookUrl": "tag.a.1@href",
+    "coverUrl": "tag.a.1@href@js:##.+\\D((\\d+)\\d{3})\\D##https://www.bimidu.com/files/article/image/$2/$1/$1s.jpg###",
+    "intro": "",
+    "kind": "tag.a.0@text&&.xb6@textNodes##\\(|\\)",
+    "lastChapter": "tag.a.2@text",
+    "name": "tag.a.1@text"
+  },
+  "ruleToc": {
+    "chapterList": ".dirlist .xl6 a",
+    "chapterName": "text",
+    "chapterUrl": "href"
+  },
+  "searchUrl": "/modules/article/search.php?submit=%CB%D1%CB%F7&searchkey={{key}}&page={{page}},\n{\n  \"charset\": \"GBK\"\n}",
+  "weight": 0
+}
