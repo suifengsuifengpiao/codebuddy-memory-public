@@ -1,0 +1,70 @@
+[
+  {
+    "bookSourceName": "读书斋(sgm)",
+    "bookSourceUrl": "https://sgm.dushuzhai.cc",
+    "bookSourceType": 0,
+    "bookSourceGroup": "自建",
+    "bookSourceComment": "读书斋手机版。2026-10-27 沙盒实测(v9)：①防护为 Cloudflare TLS/JA3 指纹 + 搜索页「自建明文cookie验证页」；UA 与 cf_clearance 均非拦因，curl_cffi(chrome指纹) 四路径全 200。②搜索需 is_human cookie，由 loginCheckJs 自动两步法获取（同会话跨关键词可复用）。③目录 tocUrl 从详情页「目录页」按钮（a#list200）提取真实链接指向 index.html，静态完整 496 章；详情页静态只有 18 章。④正文 #chaptercontent 服务端直出；章节分多页，nextContentUrl 读内联变量 next_chapterpage，仅在本章 _N 分页内继续，跨章即停。⑤replaceRegex 清除中段 script 残留与尾部广告/推荐区。",
+    "enabled": true,
+    "enabledExplore": true,
+    "enabledCookieJar": true,
+    "concurrentRate": "",
+    "header": "{\"User-Agent\":\"Mozilla/5.0 (Linux; Android 16; JUY-AL50 Build/HUAWEI JUY-AL50) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36\",\"Referer\":\"https://sgm.dushuzhai.cc/\",\"Accept\":\"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\",\"Accept-Language\":\"zh-CN,zh;q=0.9\"}",
+    "searchUrl": "https://sgm.dushuzhai.cc/modules/article/search.php?searchkey={{key}}&type=articlename,{\"charset\":\"utf-8\"}",
+    "loginCheckJs": "var b = result.body(); if (b && b.indexOf('encryptedCookieValue') > -1) { var i = b.indexOf('encryptedCookieValue'); var j = b.indexOf(String.fromCharCode(34), i); var k = b.indexOf(String.fromCharCode(34), j + 1); if (j > -1 && k > j) { var v = b.substring(j + 1, k); cookie.setCookie(baseUrl, 'is_human=' + v); result = java.connect(result.url()); } } result;",
+    "ruleSearch": {
+      "bookList": "//div[contains(@class,'hot_sale')][p[@class='title']]",
+      "name": "//p[@class='title']/a/text()",
+      "author": "//p[@class='author'][1]/a/text()",
+      "kind": "//p[@class='author'][1]/text()##\\s*\\|.*$",
+      "lastChapter": "",
+      "intro": "",
+      "coverUrl": "",
+      "wordCount": "",
+      "bookUrl": "//p[@class='title']/a/@href##^javascript:sovote\\(\\d+,\\s*'([^']+)'.*##$1"
+    },
+    "ruleBookInfo": {
+      "name": "//meta[@property='og:novel:book_name']/@content",
+      "author": "//meta[@property='og:novel:author']/@content",
+      "kind": "//meta[@property='og:novel:category']/@content",
+      "lastChapter": "//meta[@property='og:novel:latest_chapter_name']/@content",
+      "updateTime": "//meta[@property='og:novel:update_time']/@content",
+      "intro": "//meta[@property='og:description']/@content",
+      "coverUrl": "//meta[@property='og:image']/@content",
+      "wordCount": "",
+      "tocUrl": "//a[@id='list200']/@href"
+    },
+    "ruleToc": {
+      "chapterList": "//div[@id='chapterlist']/p[a[@class='infoad']]",
+      "chapterName": "//a/text()",
+      "chapterUrl": "//a/@href",
+      "nextTocUrl": "",
+      "isVolume": "",
+      "isVip": "",
+      "isPay": ""
+    },
+    "ruleContent": {
+      "content": "//div[@id='chaptercontent']/p[not(@id)][not(@style)][not(contains(text(),'当前浏览器转码失败'))]",
+      "nextContentUrl": "<js>(function(){var h=String(result||''),out='';var i=h.indexOf('next_chapterpage');if(i>-1){var q=h.indexOf(String.fromCharCode(34),i),j=h.indexOf(String.fromCharCode(34),q+1);if(q>-1&&j>q)out=h.substring(q+1,j);}if(out&&!/_\\d+\\.html$/.test(out))out='';return out;})()</js>",
+      "webJs": "",
+      "sourceRegex": "",
+      "imageStyle": "full"
+    },
+    "customOrder": 0,
+    "weight": 0,
+    "lastUpdateTime": 0,
+    "respondTime": 0,
+    "exploreUrl": "[{\"title\": \"玄幻\", \"url\": \"/novelsort_1_1.html\"}, {\"title\": \"仙侠\", \"url\": \"/novelsort_2_1.html\"}, {\"title\": \"都市\", \"url\": \"/novelsort_3_1.html\"}, {\"title\": \"军事\", \"url\": \"/novelsort_4_1.html\"}, {\"title\": \"网游\", \"url\": \"/novelsort_5_1.html\"}, {\"title\": \"科幻\", \"url\": \"/novelsort_6_1.html\"}, {\"title\": \"悬疑\", \"url\": \"/novelsort_7_1.html\"}, {\"title\": \"女生\", \"url\": \"/novelsort_8_1.html\"}, {\"title\": \"其他\", \"url\": \"/novelsort_9_1.html\"}, {\"title\": \"总排行\", \"url\": \"/noveltop_allvisit_1.html\"}, {\"title\": \"全本小说\", \"url\": \"/novelfull_{{page}}.html\"}]",
+    "ruleExplore": {
+      "bookList": "//div[contains(@class,'hot_sale')][p[@class='title']]",
+      "name": "//p[@class='title']/a/text()",
+      "author": "//p[@class='author']/text()##^\\s*作者[：:]\\s*",
+      "kind": "",
+      "lastChapter": "",
+      "intro": "//p[@class='review']/a/text()##^(\\s|amp;|emsp;|nbsp;|　)*|&?amp;|&?emsp;|&?nbsp;|\\s+",
+      "coverUrl": "",
+      "wordCount": "",
+      "bookUrl": "//p[@class='title']/a/@href"
+    }
+  }
+]
