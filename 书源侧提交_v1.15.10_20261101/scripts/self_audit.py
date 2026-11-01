@@ -1,0 +1,706 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+self_audit.py —— 技能自身的一致性自检（改完技能必跑）。
+
+为什么需要它（1.13.10 审计的教训）：
+    改技能是"点状"的, 但技能内部是"网状"依赖的 —— 文档互相引用、文档描述脚本参数、文档抄了当前
+    用例数。补一个洞会顺带开出新接口, 而"新接口接没接上"只存在于人的记忆里。于是每次改完技能,
+    下次检查总能翻出新的悬空引用 / 死配置 / 写死计数(1.13.10 一次审计就翻出 7 处, 其中 5 处是
+    上一轮新增能力的配套欠账)。本脚本把"能 100% 确定、零误报"的五类机械检查固化, 不靠记忆。
+
+刻意不做的事（宁可少抓, 不可乱叫）：
+    - 不做语义检查。"铁律写了却没配套检测"这类抓不到 —— 靠 SKILL.md 的「改动本技能后必查」清单人工过。
+    - 不查不带 .md 文件名的「」引用。中文引号大量是术语(「双清闭环」「获取成功」), 一律当引用会
+      产生几十条噪音; 噪音会被习惯性忽略, 而被忽略的护栏比没有护栏更糟(它给的是虚假安全感)。
+    - 不检查"文档提到的参数脚本不认"之外的方向(实现有、文档没提), 那类多为可选参数, 报了是噪音。
+
+五项检查：
+    1. 悬空引用: 形如 `xxx.md「yyy」` 的明确指向, 必须在目标文档里能找到对应章节(精确/包含/字覆盖)。
+    2. CLI 参数一致性: 文档里写在脚本名旁边的 `--xxx`, 脚本必须真的认(get_opt 或字面量)。
+    3. 写死计数 / 版本号漂移: 文档或脚本里写死的 "N/N"、"N 项回归"; CHANGELOG 末条版本 ≠ SKILL.md version。
+    4. 证据文件随包: 文档按文件名引用的证据(`.kt/.java/.jar/.dex/.apk/.skill/.html/.png`),
+       必须在技能目录里真实存在 —— 防止"结论进了技能、证据留在 /tmp"这类自包含性破口。
+    5. 依赖 schema 登记: `skill-dependencies.json` 里白名单外的 check 类型/字段(以 skill-crafting
+       官方 validate 的白名单为基准), 必须在 `references/maintenance.md`「已登记的 schema 约定」
+       登记 —— 防"私扩 schema 不报错就成了暗病"这类事(官方工具链的 backup/package/install
+       全以 validate 通过为门禁, 白名单外类型会把整条交付链挡死)。
+
+用法:
+    python3 scripts/self_audit.py            # 全量自检; 有 ERROR 则 exit 1
+    python3 scripts/self_audit.py --verbose  # 额外打印目标文档的章节清单(排查"匹配规则太严"时用)
+    python3 scripts/self_audit.py --self-test  # 自检的自检: 沙盒正/反标本 + 真实技能基线(铁律 22/23)
+"""
+import os
+import re
+import sys
+import glob
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SKILL_DIR = os.path.dirname(HERE)
+
+DOC_FILES = sorted(glob.glob(os.path.join(SKILL_DIR, "references", "*.md")))
+SKILL_MD = os.path.join(SKILL_DIR, "SKILL.md")
+if os.path.isfile(SKILL_MD):
+    DOC_FILES.append(SKILL_MD)
+PY_FILES = sorted(glob.glob(os.path.join(SKILL_DIR, "scripts", "*.py"))) + \
+           sorted(glob.glob(os.path.join(SKILL_DIR, "evals", "*.py")))
+
+EMOJI = "🔴🔥⚠️✅📌🚀💡❌"
+
+
+def _read(p):
+    with open(p, encoding="utf-8") as f:
+        return f.read()
+
+
+def _norm(s):
+    return re.sub(r"[\s%s]" % EMOJI, "", s or "")
+
+
+def _anchors(text):
+    """可被引用的锚点 = `#` 章节标题 + 列表项里的加粗短语。
+
+    后者必须收: 文档里大量引用的是「双清闭环」「铁律 16」这类写在列表项里的术语
+    (`- **铁律 16：…的正解 = 「双清闭环」…**`), 只认 `#` 标题会把它们全误判成悬空。
+    """
+    out = []
+    for line in text.splitlines():
+        m = re.match(r"^#{2,6}\s+(.*)", line)
+        if m:
+            out.append(m.group(1).strip())
+            continue
+        m2 = re.match(r"^\s*[-*]\s+\*\*(.+?)\*\*", line)
+        if m2:
+            out.append(m2.group(1).strip()[:80])
+    return out
+
+
+# ---------------------------------------------------------------- 1) 悬空引用
+# 只认"明确指向某个 md 文件"的引用: xxx.md「yyy」 / xxx.md 的「yyy」
+REF_RE = re.compile(r"([a-zA-Z0-9_\-]+\.md)\s*[的]?\s*[「『]([^」』]{2,60})[」』]")
+
+
+def _match_any(q, titles):
+    """引用内容是否能在某个章节标题里对上。逐级放宽: 精确包含 → 去括号后缀 → 去斜杠 → 字覆盖率。"""
+    if not q:
+        return False        # 全空白引用(如 `xxx.md「  」`): 空串是任何标题的子串, 会恒真假放行
+    for t in titles:
+        if q in t or t in q:
+            return True
+        t2 = re.sub(r"[（(].*?[)）]", "", t)          # 去掉标题里的 (补充说明)
+        if q in t2 or t2 in q:
+            return True
+        q3, t3 = q.replace("/", ""), t2.replace("/", "")
+        if q3 in t3 or t3 in q3:
+            return True
+        if q3 and sum(1 for c in set(q3) if c in t3) / float(len(set(q3))) >= 0.8:
+            return True     # 字覆盖率: 容忍「目录/正文翻页」vs 标题「目录/正文分页翻页(…)」这类措辞差
+    return False
+
+
+def check_dangling_refs(errors, verbose=False):
+    titles = {}
+    for p in DOC_FILES:
+        titles[os.path.basename(p)] = [_norm(t) for t in _anchors(_read(p))]
+    for p in DOC_FILES:
+        for i, line in enumerate(_read(p).splitlines(), 1):
+            for mdname, quoted in REF_RE.findall(line):
+                cand = titles.get(mdname)
+                if cand is None:
+                    errors.append(
+                        "[%s:%d] 引用了不存在的文档 `%s`（「%s」）→ 文件不在 references/ 下"
+                        % (os.path.basename(p), i, mdname, quoted))
+                    continue
+                if not _match_any(_norm(quoted), cand):
+                    msg = ("[%s:%d] 悬空引用: `%s` 里没有与「%s」对应的章节 → 读者按指引会扑空。"
+                           "要么补写该章节, 要么改掉引用。"
+                           % (os.path.basename(p), i, mdname, quoted))
+                    if verbose:
+                        msg += " 现有章节: %s" % " / ".join(titles[mdname])[:400]
+                    errors.append(msg)
+
+
+# ---------------------------------------------------------------- 2) CLI 参数一致性
+def _impl_args(src):
+    """脚本实际认的参数: get_opt("--x") 调用 + 源码里的 "--xxx" 字面量"""
+    out = set(re.findall(r'get_opt\(\s*["\'](--[a-zA-Z][a-zA-Z0-9\-]*)', src))
+    out |= {x for x in re.findall(r'["\'](--[a-zA-Z][a-zA-Z0-9\-]{2,})["\']', src)}
+    return out
+
+
+def _doc_args(script_name, docs):
+    """文档里写在脚本名旁边的 --xxx。
+
+    窗口必须卡死在「同行 + 遇到下一个 .py 之前」: 放宽到跨行/固定长度会把**别的脚本**的参数
+    算到它头上(实测 220 字符窗口给 validate_booksource.py 抓出 --cold/--source —— 那俩是
+    realcheck 和 js_layer_check 的), 一开箱就是十几条噪音。宁可漏, 不可吵。
+    """
+    out = set()
+    for name, text in docs:
+        for line in text.splitlines():
+            for m in re.finditer(re.escape(script_name), line):
+                seg = line[m.end():]
+                nxt = re.search(r"[a-zA-Z0-9_\-]+\.py", seg)
+                if nxt:
+                    seg = seg[:nxt.start()]
+                # 排除 `--https://...` 这类: 那是 Legado 调试命令里"只调正文页"的 URL 前缀, 不是本脚本参数
+                seg = re.sub(r"--[a-zA-Z][a-zA-Z0-9\-]*://", " ", seg)
+                out |= set(re.findall(r"(--[a-zA-Z][a-zA-Z0-9\-]{2,})", seg))
+    return out
+
+
+def check_cli_args(errors):
+    docs = [(os.path.basename(p), _read(p)) for p in DOC_FILES]
+    for p in PY_FILES:
+        name = os.path.basename(p)
+        if name == "self_audit.py":
+            continue        # 不自检自己, 避免自指噪音
+        impl = _impl_args(_read(p))
+        doc = _doc_args(name, docs)
+        for a in sorted(doc - impl):
+            errors.append("[%s] 文档写了参数 `%s`, 但脚本不认(实现只认: %s) → 照文档跑会静默无效"
+                          % (name, a, ", ".join(sorted(impl)) or "无"))
+
+
+# ---------------------------------------------------------------- 3) 写死计数 / 版本漂移
+# 只认"回归/通过/用例"语境里的 N/N —— 裸的 \d+/\d+ 满地都是(HTTP 404/403、铁律 15/16、
+# 步骤 1/4), 一律当计数会刷出十几条噪音。噪音会被习惯性忽略, 等于没有护栏。
+# 方向必须两边都看: 当初的真实 bug 是 `JS层回归 7/7`(关键词在数字**前面**),
+# 只看后面会漏掉它。行级是否含回归语境由下面的 `re.search(回归|通过|用例)` 把关。
+COUNT_RE = re.compile(r"(?<![\w.])(\d{1,3})\s*/\s*(\d{1,3})(?![\w.])")
+ITEM_RE = re.compile(r"(\d{1,3})\s*项(?:回归|用例)")
+
+
+def check_hardcoded(errors, notices=None):
+    """notices: 非阻断提示。**不为零不算失败**，但必须打出来——
+    「检查器判不了」和「检查器判过且没问题」在输出上必须能区分，否则又是一次假绿。"""
+    if notices is None:
+        notices = []
+    # 3a) 写死的计数: 用例数会随能力增长, 抄进代码必然过期。
+    #     只查 .py —— 文档里大量 N/N 是"实测六种形态 6/6 通过"这类历史叙述, 一律报会刷屏;
+    #     而真正的写死计数只可能出现在回归脚本的打印/断言里(当初的 bug 就在 run_evals.py 的字符串里)。
+    for p in PY_FILES:
+        base = os.path.basename(p)
+        if base == "self_audit.py":
+            continue
+        for i, line in enumerate(_read(p).splitlines(), 1):
+            s = line.strip()
+            if s.startswith("#"):
+                continue
+            if "re.search" in s or "re.compile" in s or "%s/%s" in s or r"(\d" in s:
+                continue        # 解析用的正则串, 不是写死值
+            if not re.search(r"回归|通过|用例|self-test", line):
+                continue        # 必须带回归语境; "步骤 1/4" 之类不算
+            for m in COUNT_RE.finditer(line):
+                errors.append("[%s:%d] 写死计数 '%s' → 用例数会增长, 必须解析实输出而非手写"
+                              % (base, i, m.group(0)))
+            for m in ITEM_RE.finditer(line):
+                errors.append("[%s:%d] 写死项数 '%s' → 同上, 改为解析实输出"
+                              % (base, i, m.group(0)))
+
+    # 3b) 版本漂移: CHANGELOG 末条的"版本 A → B" 必须等于 SKILL.md 的 version
+    if not os.path.isfile(SKILL_MD):
+        return
+    text = _read(SKILL_MD)
+    m = re.search(r"^version:\s*([\d.]+)", text, re.M)
+    if not m:
+        errors.append("[SKILL.md] 缺少 version 声明")
+        return
+    ver = m.group(1)
+    # 三处 version 必须一致: SKILL.md frontmatter / _meta.json / (若有)CHANGELOG 末条。
+    # 不能只依赖 CHANGELOG —— 变更日志一旦移出正文, hist 恒为空, 这道检查会静默失效。
+    meta_p = os.path.join(SKILL_DIR, "_meta.json")
+    meta_unreadable = False   # v1.15.4: 解析失败须给下游留痕, 否则同一故障会被静默两次
+    if os.path.isfile(meta_p):
+        try:
+            import json as _json
+            with open(meta_p, encoding="utf-8") as _f:
+                mv = _json.load(_f).get("version")
+            if mv and mv != ver:
+                errors.append("[版本漂移] SKILL.md version=%s, _meta.json version=%s → 两处必须同步"
+                              % (ver, mv))
+        except Exception as _e:
+            # v1.15.4 止漏：此处原是 `pass`。
+            # 缺陷(引擎侧 1.15.3 回执 §三 报出, 我方复现确认)：文件**在**但内容损坏时,
+            # 异常被吞 → mv 未赋值 → 3b/3c 两段检查同时消失, 而末尾照样打印"五项检查全部通过"。
+            # 护栏停摆却自称正常, 比单纯的数据错更糟(第 221 行那条规矩只堵了"文件不在"这一半)。
+            # 故与"文件缺失"同族处理: 数据源不可用一律显式报错, 绝不静默。
+            meta_unreadable = True
+            errors.append(
+                "[版本漂移] _meta.json 存在但无法解析(%s) → 版本漂移检查已失去数据源, 无法判定"
+                % (type(_e).__name__ + ((": " + str(_e)[:60]) if str(_e) else "")))
+    else:
+        # 数据源消失不能静默：文件不在就整段跳过 = 这道检查随之消失，而自检照样打印"全部通过"。
+        # 注：_meta.json 是本技能 .skill 包的组成部分，随包分发；若你是手工建目录、本就没有
+        # 此文件的场景，这条可忽略 —— 那种情况下版本漂移检查确实无数据源可用。
+        errors.append("[版本漂移] _meta.json 缺失 → 版本漂移检查已失去数据源, 无法判定"
+                      "(手工安装无此文件时可忽略)")
+    hist = re.findall(r"版本\s*([\d.]+)\s*→\s*([\d.]+)", text)   # 保留，有日志时仍然生效
+    if hist and hist[-1][1] != ver:
+        errors.append("[SKILL.md] 版本漂移: CHANGELOG 末条写到 %s, 但 version 是 %s"
+                      % (hist[-1][1], ver))
+
+    # 3c) display_name 内含的版本号也必须跟上（v1.15.3 新增）
+    # 背景(真事)：version 已改到 1.15.2，display_name 仍写「书源工坊 v1.15.0」，
+    # 我方与引擎侧两侧都没发现——旧检查只比对 version 字段，抓不到展示名里的版本号。
+    # 它不导致功能故障，但技能列表/市场页会把版本号显示错，是"静默不一致"，故报 ERROR。
+    if not meta_unreadable and os.path.isfile(meta_p):
+        try:
+            import json as _json
+            with open(meta_p, encoding="utf-8") as _f:
+                _m = _json.load(_f)
+            _dn = _m.get("display_name") or ""
+            # v1.15.5：正则由「必须三段」放宽到「两段及以上」，把"判不了"和"没写版本"分开。
+            # 旧写法 `v?(\d+\.\d+\.\d+)` 对 `书源工坊 v1.15` 匹配不上 → 落进"无版本号→跳过"→ 全绿。
+            # 但 `v1.15` 既不是"没写版本"，也不是"非标准写法"（大版本对齐很常见），
+            # 它只是**段数不够**。归进"跳过"= 检查器以为自己判过了。
+            # 与本文件近三轮修的是同一族：样本不合预期 → 静默跳过 → 绿。
+            # 来源：引擎侧 v1.15.4 回执 §五 第 6 条（他喂了六种形态，这条是双方都没提的）。
+            #
+            # v1.15.6：`v?` 前缀可选 ⇒ 等价于"版本号 = 展示名里第一个数字串"。
+            # 日期排在版本前面（`2026.11.01 v1.15.5`）时取到日期，对**写对了的**展示名报 ERROR。
+            # 这是误报，比漏报更伤信任：看到 ERROR 先怀疑检查器，护栏就废了。
+            # 改成两级：先找带 v/V 前缀的（语义上就是版本），找不到才退回裸数字串（保持旧行为）。
+            # 不新增分支——纯日期 `2026.11.01` 仍走裸匹配、仍按三段比对，行为与 v1.15.5 一致。
+            _d = re.search(r"[vV]\s*(\d+(?:\.\d+)+)", _dn)
+            if not _d:
+                _d = re.search(r"(\d+(?:\.\d+)+)", _dn)     # 真没写任何版本号才跳过
+            if _d:
+                _parts = _d.group(1).split(".")
+                # v1.15.9：点分数字串若是「纯日期」（首段 4 位年份且 1900~2100），说明展示名只写了
+                # 日期、没写版本号，属于「判不了」而非「不一致」→ NOTE，而不是把它们当版本号比对报错。
+                # 旧实现会对 `2026.11.01` 报 ERROR(与 version 不一致)，属误报。
+                # 边界：首段须恰好 4 位且落年份区间，避免误伤 `v1.15.8`(首段"1")、`11.01.2026`(首段"11")。
+                if len(_parts) == 3 and len(_parts[0]) == 4 and _parts[0].isdigit() \
+                   and 1900 <= int(_parts[0]) <= 2100:
+                    notices.append(
+                        "[版本漂移] _meta.json display_name=%r 只含日期 %s、未写版本号，"
+                        "无法与 SKILL.md version=%s 比对 → 请人工确认是否需要补版本号（非阻断）"
+                        % (_dn, _d.group(1), ver))
+                elif len(_parts) == 3:
+                    if _d.group(1) != ver:
+                        errors.append(
+                            "[版本漂移] _meta.json display_name=%r 内含版本 %s, 与 SKILL.md version=%s 不一致 "
+                            "→ 技能市场展示的版本号会对不上；改 version 时须一并改这里"
+                            % (_dn, _d.group(1), ver))
+                else:
+                    # 段数≠3：可能是 `v1.15` 这种对齐写法，也可能带额外后缀。判 ERROR 会变狼来了，
+                    # 静默又会让它跟"没问题"混在一起 —— NOTE 是中间唯一不两头得罪的档位。
+                    # 沿用 v1.14.1 教训「护栏应提示而非命令」。
+                    notices.append(
+                        "[版本漂移] _meta.json display_name=%r 含 %d 段版本 %s，无法与 version=%s "
+                        "直接比对 → 请人工确认展示名是否已更新（非阻断）"
+                        % (_dn, len(_parts), _d.group(1), ver))
+            else:
+                # v1.15.9：主匹配落空(没有点分数字串)，但展示名含「疑似日期」(YYYY-MM-DD / YYYY/MM/DD)。
+                # 这是「写了日期但分隔符不是点」的情况，旧正则只认点分 → 整段静默跳过(漏网)。
+                # 引擎侧 v1.15.8 回执 §二 实测：`2026-11-01` / `2026/11/01` 一声不吭地绿。
+                # 判不了就说判不了 → NOTE 而非静默。
+                if re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", _dn):
+                    notices.append(
+                        "[版本漂移] _meta.json display_name=%r 含疑似日期但分隔符非点分，"
+                        "无法提取版本号与 version=%s 比对 → 请人工确认（非阻断）"
+                        % (_dn, ver))
+        except Exception as _e:
+            # 同 3b: 不静默。正常到不了这里(3b 成功解析后本段也会成功)，
+            # 保留显式报错是为了不让 `except: pass` 这个模式留在新增代码里。
+            errors.append(
+                "[版本漂移] _meta.json 无法解析(%s) → display_name 检查已失去数据源, 无法判定"
+                % (type(_e).__name__ + ((": " + str(_e)[:60]) if str(_e) else "")))
+
+
+# ---------------------------------------------------------------- 4) 证据文件随包
+# 教训(1.13.23 之后补): 文档按**文件名**引用了证据(如 `AnalyzeByJSoup.kt`), 但该文件只存在于
+# /tmp、从未进技能包 —— 技能包自包含性破了, 唯一副本还在易失目录里, 哪天 /tmp 一清就只剩结论没有出处。
+# 第 1 类悬空引用只管 `xxx.md「yyy」` 这种**文档章节**指向, 抓不到文件级引用, 故单列一类。
+#
+# 宁可少抓不可乱叫 —— 这里是踩过坑才收紧的:
+#   初版查"所有带这些扩展名的反引号 token", 一跑刷出 50 条, 其中 46 条是噪音:
+#     站点 URL 路径(`/list/N/{{page}}.html`、`rrssk.com/003Q.html`)、APK 内部类
+#     (`help/http/e.java`、`BookContent.kt`、`service/WebService.java`)、CHANGELOG 里的
+#     `v1.13.xx.skill` 历史叙述、外部工具 `rhino-1.7.14.jar`、Legado 调试语法 `--https://…html`。
+#   噪音会被习惯性忽略, 被忽略的护栏比没有护栏更糟(虚假安全感)。故只保留**零误报**的那一种形状:
+#   **只查带技能内目录前缀的引用**(`references/ scripts/ evals/ samples/`)。
+#
+# 由此立下约定: 引用证据一律写**技能内路径**(如 `references/evidence/AnalyzeByJSoup.kt`),
+# 不要只写裸文件名 —— 裸名既无法区分"APK 内部类"还是"本技能证据", 也逃过本检查。
+EVID_RE = re.compile(
+    r"`((?:references|scripts|evals|samples)/[^`\s]+?"
+    r"\.(?:kt|java|jar|dex|apk|skill|html|png|json))`")
+
+
+def check_evidence_files(errors):
+    for p in DOC_FILES:
+        for i, line in enumerate(_read(p).splitlines(), 1):
+            for token in EVID_RE.findall(line):
+                if os.path.exists(os.path.join(SKILL_DIR, token)):
+                    continue
+                errors.append(
+                    "[%s:%d] 证据文件未随包: 文档引用了 `%s`, 但技能目录里找不到 → "
+                    "结论无出处可核。把文件放进技能内(如 references/evidence/)再引用"
+                    % (os.path.basename(p), i, token))
+
+
+# ---------------------------------------------------------------- 5) 依赖 schema 登记
+# 官方 skill-crafting validate 的 check 类型/字段白名单是封闭集, 且它的 backup/package/install
+# 全以 validate 通过为门禁。历史上私扩过 check 类型(为表达"第三方 Python 包可导入"——官方 python
+# 类型只验解释器版本, 没装也报 ready, 是死配置), 结果官方 validate 报 6 条 error、交付链全被挡。
+# 现行做法: 该语义用白名单内的 python 型 + command 字段承载(见 maintenance.md 登记节)。
+# 本检查守住边界: 今后再出现白名单外类型/字段, 必须先在登记节登记(说明官方 schema 为何表达不了),
+# 否则 ERROR —— 不允许"悄悄私扩、交付时才爆"。
+OFFICIAL_CHECK_TYPES = {
+    "cli", "cli_probe", "env", "file", "json_field", "mcp", "mcp_probe",
+    "auth_probe", "python", "url",
+}
+OFFICIAL_CHECK_FIELDS = {
+    "id", "type", "required", "target", "command", "min_version", "name", "path",
+    "field", "server", "url", "method", "expected_status",
+}
+REGISTER_SECTION = "已登记的 schema 约定"
+
+
+def _registered_tokens():
+    """登记节里的反引号标识符集合; 文件/章节缺失返回 None(数据源没了不能静默)。"""
+    mp = os.path.join(SKILL_DIR, "references", "maintenance.md")
+    if not os.path.isfile(mp):
+        return None
+    text = _read(mp)
+    i = text.find(REGISTER_SECTION)
+    if i < 0:
+        return set()
+    tail = text[i:]
+    j = tail.find("\n## ", 1)   # 截到下一个二级标题为止
+    if j > 0:
+        tail = tail[:j]
+    return set(re.findall(r"`([A-Za-z_][\w]*)`", tail))
+
+
+def check_dependency_schema(errors):
+    dep_p = os.path.join(SKILL_DIR, "skill-dependencies.json")
+    if not os.path.isfile(dep_p):
+        errors.append("[schema 登记] skill-dependencies.json 缺失 → 依赖检查失去数据源")
+        return
+    try:
+        import json as _json
+        with open(dep_p, encoding="utf-8") as _f:
+            data = _json.load(_f)
+    except Exception as exc:
+        errors.append("[schema 登记] skill-dependencies.json 解析失败: %s" % exc)
+        return
+    if not any(c.get("type") not in OFFICIAL_CHECK_TYPES or set(c) - OFFICIAL_CHECK_FIELDS
+               for dep in data.get("dependencies", []) for c in dep.get("checks", [])):
+        return   # 全合法, 不需要读登记表
+    registered = _registered_tokens()
+    if registered is None:
+        errors.append("[schema 登记] references/maintenance.md 缺失 → 登记表失去数据源, 无法判定")
+        return
+    for idx, dep in enumerate(data.get("dependencies", [])):
+        for cidx, check in enumerate(dep.get("checks", [])):
+            where = "dependencies[%d].checks[%d]" % (idx, cidx)
+            ctype = check.get("type")
+            if ctype not in OFFICIAL_CHECK_TYPES and ctype not in registered:
+                errors.append("[schema 登记] %s 使用白名单外类型 '%s' 且未在 maintenance.md"
+                              "「%s」登记 → 要么改回官方类型, 要么登记(写明官方 schema"
+                              " 为何表达不了)" % (where, ctype, REGISTER_SECTION))
+            for key in check:
+                if key not in OFFICIAL_CHECK_FIELDS and key not in registered:
+                    errors.append("[schema 登记] %s 使用白名单外字段 '%s' 且未在 maintenance.md"
+                                  "「%s」登记 → 同上" % (where, key, REGISTER_SECTION))
+
+
+# ---------------------------------------------------------------- 自检的自检(--self-test)
+# 铁律 22/23: 校验器自身必须有能区分正误的标本, 否则"检查器坏了"和"确实没问题"的输出长得
+# 一模一样 —— 护栏反而给虚假安全感。四类检查此前只在 1.13.10 用**手工植入**验证过一次,
+# 那份验证没固化进任何脚本, 所以之后若有人改坏正则(比如 EVID_RE 永远不匹配), 检查会静默空转,
+# 而技能每次自检都打印"全部通过"。本函数把正/反标本固化成一条命令。
+#
+# 做法: 在临时目录搭一棵迷你技能树, 用 subprocess 真跑本脚本。
+# 为什么不直接调 check_*(errors): 那测的是函数, 测不到"模块级常量靠 __file__ 推导 SKILL_DIR"
+# 这条真实链路; 沙盒跑的是端到端行为, 顺带把目录推导也验了。
+_PITFALLS = """\
+## 正文空根因决策树
+- **双清闭环**：先 header 清、再 content 清。
+"""
+
+
+def _sandbox_files(dirty, broken_meta=False, odd_display=False, date_first=False, date_sep=False, date_dot=False):
+    """迷你技能树。dirty=True 时注入多类缺陷, 每类对应一个可被断言的关键词。
+
+    **沙盒必须与真实技能结构双向同步**（1.13.28 立，两轮各踩一次才抽象出来）：
+      · 真实有的，沙盒不能缺 —— 缺了会让"干净树"被误判，正例直接 0/1。
+        实测：沙盒未放 `_meta.json`，而主自检新增了"缺失即报错"，干净树反而被拦，
+        回归掉到 39/40。
+      · 真实没有的，沙盒不能依赖 —— 依赖了触发路径就是假的，删掉即漏抓。
+        实测：沙盒靠正文 changelog 触发版本漂移，而真实技能 1.13.25 已删正文日志，
+        后人一旦以"日志都移出正文了"为由清理那两行，这条反例就只剩 4/5。
+    缺任何一半都会瞎，且瞎法不同：前者"该放行的被拦"，后者"该抓的抓不到"。
+    改技能文件结构（增删改名）后，回来同步这棵树。
+    """
+    demo = 'TIMES = get_opt("--times")\n'
+    # 5) schema 登记: 干净树用官方合法的 python 型 + command 字段(应放行);
+    #    脏树用白名单外类型 magic_check 且不登记(必须被抓)。
+    deps_clean = ('{"dependencies": [{"id": "demo-pkg", "type": "local-tool", "required": false,'
+                  ' "capabilities": ["demo"], "checks": [{"id": "demo-import", "type": "python",'
+                  ' "required": false, "command": "demo_mod"}]}]}')
+    deps_dirty = deps_clean.replace('"type": "python"', '"type": "magic_check"')
+    # 登记节: 干净/脏树都放一份(含已登记标识符), 确保脏树被抓是因为"未登记"而不是"表缺失"
+    maint = ("# 维护本技能\n\n## 已登记的 schema 约定\n\n"
+             "| 约定 | 内容 |\n|---|---|\n"
+             "| `python` 型 check 的 `command` 字段 | 承载 Python 模块名, 验第三方包可导入 |\n")
+    if dirty:
+        demo += 'print("回归: 38/38 通过")\n'                  # 3a 写死计数
+        ev = "references/evidence/missing.kt"                 # 4 证据未随包
+        changelog = "版本 0.9.9 → 2.0.0"                       # 3b 版本漂移
+        extra = ("引用 `references/pitfalls.md「根本不存在的章节xyz」`\n"   # 1 悬空引用
+                 "跑 `python3 scripts/demo.py --no-such-flag`\n")          # 2 CLI 参数
+    else:
+        ev = "references/evidence/real.kt"
+        changelog = "版本 0.9.9 → 1.0.0"
+        extra = ("引用 `references/pitfalls.md「双清闭环」`\n"
+                 "跑 `python3 scripts/demo.py --times 3`\n")
+    return {
+        "SKILL.md": "---\nversion: 1.0.0\n---\n" + extra +
+                    "证据见 `%s`\nCHANGELOG: %s\n" % (ev, changelog),
+        "references/pitfalls.md": _PITFALLS,
+        "references/maintenance.md": maint,
+        "skill-dependencies.json": deps_dirty if dirty else deps_clean,
+        "scripts/demo.py": demo,
+        "references/evidence/real.kt": "// 占位\n",
+        # 三态互斥, 顺序即优先级:
+        #   broken_meta —— 文件**在**但内容是非法 JSON（v1.15.4 补的反例）
+        #     dirty 是"值不一致"(会报错), broken 是"不可解析"(旧实现在此吞异常 →
+        #     整段检查消失而末尾照样打印"五项全部通过")。来源：引擎侧 v1.15.3 回执 §三。
+        #   odd_display —— 合法 JSON, 但 display_name 只写两段版本 `v1.0`（v1.15.5 补的反例）
+        #     它不是"没写版本"，也不是"坏数据"，是**样本不合旧正则的形状**：
+        #     旧正则 `\d+\.\d+\.\d+` 匹配不上 → 当成"无版本号"跳过 → 全绿。
+        #     与 broken_meta 同族：**不是数据错，是检查器以为自己做完了判断**。
+        #     来源：引擎侧 v1.15.4 回执 §五 第 6 条。
+        #   date_first —— 合法 JSON、版本号**写对了**，只是日期排在版本前面
+        #     （v1.15.6 补的反例）。这一组断言方向与前三组**相反**：
+        #     前三组验"该报有没有报"(漏报)，这组验"不该报有没有报"(误报)。
+        #     旧实现 `v?(\d+...)` 里 `v?` 前缀可选 ⇒ 等价于"版本号 = 第一个数字串"，
+        #     于是 `2026.11.01 v1.0.0` 取到日期，对着正确的展示名报 ERROR。
+        #     来源：引擎侧 v1.15.5 回执 §四（他构造的样本，我方 v1.15.3/1.15.4/1.15.5 均复现）。
+        #   date_sep —— 合法 JSON、版本号没写、只写了**横线/斜线**分隔的纯日期
+        #     （v1.15.9 补的反例）。旧实现裸正则 `(\d+(?:\.\d+)+)` 只认点分，
+        #     `2026-11-01`/`2026/11/01` 一个 `.` 都没有 → 主匹配落空 → 掉进"真没写版本号→跳过"
+        #     → **静默通过**，与"真没写版本号"输出一模一样。来源：引擎侧 v1.15.8 回执 §二 实测。
+        "_meta.json": (
+            '{"version": "1.0.0", "display_name": "书源工坊 v1.0.0",' if broken_meta else
+            ('{"version": "1.0.0", "display_name": "书源工坊 v1.0"}' if odd_display else
+             ('{"version": "1.0.0", "display_name": "书源工坊 2026.11.01 v1.0.0"}' if date_first else
+              ('{"version": "1.0.0", "display_name": "书源工坊 2026-11-01"}' if date_sep else
+               ('{"version": "1.0.0", "display_name": "书源工坊 2026.11.01"}' if date_dot else
+                ('{"version": "9.9.9"}' if dirty else '{"version": "1.0.0"}')))))),
+    }
+
+
+# 反向标本: 缺陷 → 报错里必现的关键词(少一个就说明那类检查空转了)
+_DIRTY_MARKERS = [
+    ("悬空引用", "悬空引用"),
+    ("CLI 参数", "文档写了参数"),
+    ("写死计数", "写死计数"),
+    ("版本漂移", "版本漂移"),
+    ("证据随包", "证据文件未随包"),
+    ("schema 登记", "未在 maintenance.md"),
+]
+
+
+def _real_baseline():
+    """真实技能树的基线断言 —— 补虚拟沙盒压根测不到的那一段。
+
+    沙盒里 version 写死 1.0.0、变更日志写死「版本 0.9.9 → X」, 它验证的只是"判据能不能
+    匹配上这段假文本", 真实技能当前是哪版、两处 version 同不同步、真实目录跑一遍是不是
+    真绿, 它一概不知。1.13.25 就栽在这: 正文变更日志移出后, 版本漂移检查的数据源恒为空、
+    整段永不触发, 而 --self-test 因为喂的是写死的虚拟日志照样报 5/5 通过 —— 真实链路已瞎,
+    护栏还在喊绿。本组断言把真实文件拉进自测, 让"--self-test 绿"真的等于"本技能当前健康"。
+    """
+    import subprocess
+
+    checks = []   # [(名字, 通过?, 备注)]
+
+    ver = None
+    if os.path.isfile(SKILL_MD):
+        m = re.search(r"^version:\s*([\d.]+)", _read(SKILL_MD), re.M)
+        ver = m.group(1) if m else None
+    checks.append(("真实 SKILL.md 能取到 version", ver is not None, ver or "取不到"))
+
+    mv = None
+    meta_p = os.path.join(SKILL_DIR, "_meta.json")
+    if os.path.isfile(meta_p):
+        try:
+            import json as _json
+            with open(meta_p, encoding="utf-8") as _f:
+                mv = _json.load(_f).get("version")
+        except Exception:
+            mv = None
+    checks.append(("真实 _meta.json 能取到 version", mv is not None, mv or "取不到"))
+
+    checks.append(("两处 version 同步",
+                   bool(ver) and bool(mv) and ver == mv,
+                   "%s vs %s" % (ver, mv)))
+
+    p = subprocess.run([sys.executable, os.path.abspath(__file__)],
+                       capture_output=True, text=True)
+    checks.append(("真实技能自检 exit=0", p.returncode == 0,
+                   "exit=%d" % p.returncode))
+    return checks
+
+
+def self_test(verbose=True):
+    import shutil
+    import subprocess
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix="selfaudit_selftest_")
+    sd = os.path.join(tmp, "scripts")
+    try:
+        os.makedirs(sd, exist_ok=True)
+        shutil.copy2(os.path.abspath(__file__), os.path.join(sd, "self_audit.py"))
+
+        def run(dirty, broken_meta=False, odd_display=False, date_first=False, date_sep=False, date_dot=False):
+            for rel, text in _sandbox_files(dirty, broken_meta, odd_display, date_first, date_sep, date_dot).items():
+                fp = os.path.join(tmp, rel)
+                os.makedirs(os.path.dirname(fp), exist_ok=True)
+                with open(fp, "w", encoding="utf-8") as f:
+                    f.write(text)
+            p = subprocess.run([sys.executable, os.path.join(sd, "self_audit.py")],
+                               capture_output=True, text=True)
+            return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+        ok = True
+        lines = []
+        rc, out = run(False)
+        pos_ok = (rc == 0)
+        ok &= pos_ok
+        lines.append("  正例(干净树应放行): %s" % ("OK exit=0" if pos_ok else "FAIL\n%s" % out[:400]))
+
+        rc, out = run(True)
+        # 必须只在 [ERROR] 行里找 marker —— 踩过坑: 最初用 `marker in out` 匹配整个输出,
+        # 而脚本 header 本身就印着「悬空引用 / CLI 参数 / 写死计数·版本 / 证据文件随包」,
+        # 于是「悬空引用」「写死计数」两条**恒真**, 反向标本形同虚设。证伪实验(故意把
+        # 悬空引用判据改成 `if False:`)才暴露它: 检查器已然全瞎, 自测照样报 5/5 通过。
+        # 教训: 断言要盯"报错行", 不是"程序输出过这个词"。
+        err_lines = [l for l in out.splitlines() if l.startswith("[ERROR] ")]
+        hit = 0
+        for name, marker in _DIRTY_MARKERS:
+            got = any(marker in l for l in err_lines)
+            hit += 1 if got else 0
+            if not got:
+                lines.append("  反例漏抓: %s(输出里没有「%s」)" % (name, marker))
+        neg_ok = (rc != 0 and hit == len(_DIRTY_MARKERS))
+        ok &= neg_ok
+        lines.append("  反例(注入缺陷应全抓): %d/%d 类命中, exit=%d"
+                     % (hit, len(_DIRTY_MARKERS), rc))
+
+        # v1.15.4 新增第三组：数据源「在但坏」。放在 dirty 组之外单独跑，是因为
+        # 一旦把它并进 dirty，_meta.json 变成非法 JSON 后 3b 的"值不一致"分支就不执行了，
+        # 反而会**掩盖**已有的「版本漂移」反例——新增缺陷防线先把旧防线打瞎，得不偿失。
+        rc3, out3 = run(False, broken_meta=True)
+        err3 = [l for l in out3.splitlines() if l.startswith("[ERROR] ")]
+        meta_ok = (rc3 != 0 and any("无法解析" in l for l in err3))
+        ok &= meta_ok
+        lines.append("  畸形 meta(_meta.json 非法 JSON 须报错): %s"
+                     % ("OK exit!=0 且点到「无法解析」" if meta_ok
+                        else "FAIL\n%s" % out3[-300:]))
+
+        # 第四组(v1.15.5)：样本**形状**不合预期 → 静默跳过。与第三组同族但触发条件不同：
+        #   第三组是"数据坏了"，这组是"数据好的，只是写法旧正则认不出"。
+        #   断言不盯 exit code(它本就该是 0)，只盯有没有 [NOTE] 把"判不了"说出来。
+        rc4, out4 = run(False, odd_display=True)
+        note4 = [l for l in out4.splitlines() if l.startswith("[NOTE] ")]
+        odd_ok = (rc4 == 0 and any("无法与 version" in l or "无法直接比对" in l for l in note4))
+        ok &= odd_ok
+        lines.append("  两段式 display_name(须报 NOTE 而非静默): %s"
+                     % ("OK exit=0 且输出 [NOTE]" if odd_ok
+                        else "FAIL(静默跳过)\n%s" % out4[-300:]))
+
+        # 第五组(v1.15.6)：**误报**类。断言方向与前四组相反——
+        #   前四组都是"有缺陷 ⇒ 必须叫"，这组是"没缺陷 ⇒ 必须闭嘴"。
+        #   放进 dirty 会互相抵消（dirty 本就要求 exit!=0），必须独立跑。
+        #   只查 [ERROR] 行里有没有出现「版本漂移」，不看 exit 总数：
+        #   沙盒里若有别的无关报错，不该被这条吞掉也不该被它冒充。
+        rc5, out5 = run(False, date_first=True)
+        err5 = [l for l in out5.splitlines() if l.startswith("[ERROR] ")]
+        date_ok = (rc5 == 0 and not any("版本漂移" in l for l in err5))
+        ok &= date_ok
+        lines.append("  日期在前的正确展示名(须放行, 不得误报): %s"
+                     % ("OK exit=0 且无「版本漂移」" if date_ok
+                        else "FAIL(误报)\n%s" % out5[-300:]))
+
+        # 第七组(v1.15.9→1.15.10)：日期格式漏网。两类纯日期(无版本号)旧实现静默跳过：
+        #   A) 横/斜线分隔 `2026-11-01`/`2026/11/01`（v1.15.9 修的兜底那半）
+        #   B) 点分纯日期 `2026.11.01`（v1.15.9 修的点分那半，但当时只加了 A 的断言——
+        #      回退点分那半后第七组仍全绿、自检一声不吭；引擎侧 v1.15.9 回执 §二 指出）。
+        #   两标本同属 C 类(该认怂/NOTE)、断言方向一致，放同一组不互相抵消；
+        #   与第四组(两段版本号形状)缺陷不同，故独立成组。
+        rc7, out7 = run(False, date_sep=True)
+        note7 = [l for l in out7.splitlines() if l.startswith("[NOTE] ")]
+        date_sep_ok = (rc7 == 0 and any("日期" in l for l in note7))
+        ok &= date_sep_ok
+        rc7b, out7b = run(False, date_dot=True)
+        note7b = [l for l in out7b.splitlines() if l.startswith("[NOTE] ")]
+        date_dot_ok = (rc7b == 0 and any("日期" in l for l in note7b))
+        ok &= date_dot_ok
+        lines.append("  日期格式漏网(横/点分纯日期须报 NOTE 而非静默): %s"
+                     % ("OK 2/2" if (date_sep_ok and date_dot_ok)
+                        else "FAIL(静默跳过)\n%s\n%s" % (out7[-300:], out7b[-300:])))
+
+        # 真实基线: 上面两组都是虚拟树, 测不到"本技能此刻到底健康不健康"
+        real = _real_baseline()
+        real_ok_n = sum(1 for c in real if c[1])
+        ok &= (real_ok_n == len(real))
+        lines.append("  真实基线(本技能当前状态): %d/%d 项通过" % (real_ok_n, len(real)))
+        for name, good, note in real:
+            if not good:
+                lines.append("    真实基线未过: %s (%s)" % (name, note))
+
+        if verbose:
+            print("=" * 62)
+            print("self_audit 自检(护栏的护栏)")
+            print("=" * 62)
+            for l in lines:
+                print(l)
+            print("-" * 62)
+            print("self_audit 自检: 正例 %d/1, 反例 %d/%d, 畸形meta %d/1, 两段式NOTE %d/1, 日期在前 %d/1, 日期漏网 %d/2, 真实基线 %d/%d → %s"
+                  % (1 if pos_ok else 0, hit, len(_DIRTY_MARKERS), 1 if meta_ok else 0,
+                     1 if odd_ok else 0, 1 if date_ok else 0,
+                     (1 if date_sep_ok else 0) + (1 if date_dot_ok else 0),
+                     real_ok_n, len(real), "通过" if ok else "失败"))
+        return 0 if ok else 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main():
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__.strip())
+        sys.exit(0)
+    if "--self-test" in sys.argv:
+        return self_test()
+    verbose = "--verbose" in sys.argv
+    errors = []
+    notices = []          # 非阻断提示：判不了就说判不了，不混进 [OK]
+    check_dangling_refs(errors, verbose)
+    check_cli_args(errors)
+    check_hardcoded(errors, notices)
+    check_evidence_files(errors)
+    check_dependency_schema(errors)
+    print("=" * 62)
+    print("技能自身一致性自检 (悬空引用 / CLI 参数 / 写死计数·版本 / 证据文件随包 / schema 登记)")
+    print("=" * 62)
+    for n in notices:
+        print("[NOTE] %s" % n)
+    if not errors:
+        print("[OK] 五项检查全部通过")
+        return 0
+    for e in errors:
+        print("[ERROR] %s" % e)
+    print("-" * 62)
+    print("自检结果: ERROR=%d" % len(errors))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
