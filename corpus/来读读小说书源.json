@@ -1,0 +1,55 @@
+[
+  {
+    "bookSourceGroup": "小说",
+    "bookSourceName": "来读读小说",
+    "bookSourceType": 0,
+    "bookSourceUrl": "http://m.ilaidudu.com",
+    "customOrder": 90,
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": true,
+    "exploreUrl": "[\n    {\n\t      \"title\": \"༺ˇ»`全部分类´«ˇ༻\",\n\t      \"url\": \"\",\n\t      \"style\": {\n\t      \t    \"layout_flexGrow\": 1,\n\t      \t    \"layout_flexBasisPercent\": 1\n\t      \t}\n\t   },\n    {\n        \"title\": \"玄幻\",\n        \"url\": \"/sort/1_{{page}}/\",\n        \"style\": {\n            \"layout_flexGrow\": 1,\n            \"layout_flexBasisPercent\": 0.4\n        }\n    },\n    {\n        \"title\": \"武侠\",\n        \"url\": \"/sort/2_{{page}}/\",\n        \"style\": {\n            \"layout_flexGrow\": 1,\n            \"layout_flexBasisPercent\": 0.4\n        }\n    },\n    {\n        \"title\": \"都市\",\n        \"url\": \"/sort/3_{{page}}/\",\n        \"style\": {\n            \"layout_flexGrow\": 1,\n            \"layout_flexBasisPercent\": 0.4\n        }\n    },\n    {\n        \"title\": \"历史\",\n        \"url\": \"/sort/4_{{page}}/\",\n        \"style\": {\n            \"layout_flexGrow\": 1,\n            \"layout_flexBasisPercent\": 0.4\n        }\n    },\n    {\n        \"title\": \"网游\",\n        \"url\": \"/sort/5_{{page}}/\",\n        \"style\": {\n            \"layout_flexGrow\": 1,\n            \"layout_flexBasisPercent\": 0.4\n        }\n    },\n    {\n        \"title\": \"科幻\",\n        \"url\": \"/sort/6_{{page}}/\",\n        \"style\": {\n            \"layout_flexGrow\": 1,\n            \"layout_flexBasisPercent\": 0.4\n        }\n    },\n    {\n        \"title\": \"女生\",\n        \"url\": \"/sort/7_{{page}}/\",\n        \"style\": {\n            \"layout_flexGrow\": -1,\n            \"layout_flexBasisPercent\": 0.46\n        }\n    }\n]",
+    "header": "{\"User-Agent\": \"Mozilla/5.0 (Linux; U; Android 13; zh-Hans-CN; PFJM10 Build/TP1A.251121.001) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.4896.58 Quark/10.0.6.960 Mobile Safari/537.36\",\n\"Accept-Language\": \"zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7\"}",
+    "lastUpdateTime": 1768355337080,
+    "respondTime": 180000,
+    "ruleBookInfo": {
+      "author": ".book_box tag.span.0@text##作者：",
+      "coverUrl": ".cover img@src",
+      "intro": ".book_about dd@text##>\\s*$",
+      "kind": ".book_box tag.span.1:2:4@text##(分类|状态|更新时间)：",
+      "lastChapter": ".book_last a.0@text",
+      "name": ".name@text",
+      "wordCount": ".book_box tag.span.3@text##字数："
+    },
+    "ruleContent": {
+      "content": "#chaptercontent@html",
+      "nextContentUrl": "text.下一页@href",
+      "replaceRegex": "##最新网址.*|（本章未完.*继续阅读）|手机版阅读网址.*|.*\\(第\\d+\\/\\d+页\\)"
+    },
+    "ruleExplore": {
+      "author": ".s3@text",
+      "bookList": ".lis li",
+      "bookUrl": "a@href",
+      "coverUrl": "a@href##.*\\/(\\d+)(\\d{3})\\/##/headimgs/$1/$1$2/s$1$2.jpg",
+      "kind": ".s1@text##\\[|\\]",
+      "name": "a@text"
+    },
+    "ruleSearch": {
+      "author": ".author@text##作者：",
+      "bookList": ".bookbox",
+      "bookUrl": "tag.a.1@href",
+      "coverUrl": "img@src",
+      "kind": ".cat@text##分类：",
+      "lastChapter": "tag.a.2@text",
+      "name": "tag.a.1@text"
+    },
+    "ruleToc": {
+      "chapterList": ".book_last@tag.dl.1@a",
+      "chapterName": "text",
+      "chapterUrl": "href",
+      "nextTocUrl": "option@value"
+    },
+    "searchUrl": "/search.php,{\n  \"body\": \"searchkey={{key}}\",\n  \"charset\": \"utf-8\",\n  \"method\": \"POST\"\n}",
+    "weight": 0
+  }
+]
