@@ -1,0 +1,19 @@
+{
+  "ownerId": "local",
+  "publishedAt": 1792842545343,
+  "slug": "legado-booksource-debug",
+  "version": "1.15.9",
+  "display_name": "书源工坊 v1.15.9",
+  "display_name_en": "Legado Booksource Workshop",
+  "description_zh": "为开源阅读(Legado/阅读)3.0 App 编写、校验、调试书源 JSON：五路径解析、字段校验、铁律检测、webView 实测与无电脑诊断探针。",
+  "category": "engineering",
+  "emoji": "📖",
+  "color": "#8B5A2B",
+  "tags": [
+    "Legado",
+    "书源",
+    "阅读",
+    "XPath",
+    "JSON"
+  ]
+}
