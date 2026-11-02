@@ -1,0 +1,13 @@
+### corpus 全量（12 本）：v1.15.12 基线 vs v1.15.13（按宿主算法切分后）
+八叉书库书源     | 改前 ERROR=2 WARN=0 NOTE=0      | 改后 ERROR=0 WARN=0 NOTE=3
+手机小说书源     | 改前 ERROR=1 WARN=0 NOTE=1      | 改后 ERROR=1 WARN=0 NOTE=1
+来读读小说书源  | 改前 ERROR=0 WARN=1 NOTE=11     | 改后 ERROR=0 WARN=1 NOTE=11
+百草露小说书源  | 改前 ERROR=0 WARN=2 NOTE=19     | 改后 ERROR=0 WARN=2 NOTE=19
+读书斋书源        | 改前 ERROR=0 WARN=11 NOTE=13    | 改后 ERROR=0 WARN=11 NOTE=13
+读知阁书源        | 改前 ERROR=0 WARN=1 NOTE=2      | 改后 ERROR=0 WARN=1 NOTE=2
+luyouxs                | 改前 ERROR=1 WARN=0 NOTE=3      | 改后 ERROR=0 WARN=0 NOTE=3
+yqkxs                  | 改前 ERROR=0 WARN=7 NOTE=2      | 改后 ERROR=0 WARN=7 NOTE=2
+yueliangxiaoshuo       | 改前 ERROR=0 WARN=66 NOTE=2     | 改后 ERROR=0 WARN=66 NOTE=2
+duomle                 | 改前 ERROR=0 WARN=1 NOTE=2      | 改后 ERROR=0 WARN=1 NOTE=2
+亲亲小说           | 改前 ERROR=0 WARN=1 NOTE=2      | 改后 ERROR=0 WARN=1 NOTE=2
+bimidu                 | 改前 ERROR=0 WARN=4 NOTE=17     | 改后 ERROR=0 WARN=5 NOTE=17
